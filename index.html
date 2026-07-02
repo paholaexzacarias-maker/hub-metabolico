@@ -98,6 +98,20 @@ body{overflow-x:hidden;padding-bottom:env(safe-area-inset-bottom)}
 .tab-content{display:none}
 .tab-content.active{display:block}
 .empty-state{text-align:center;color:var(--text3);font-size:13px;padding:48px 0}
+.gym-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:8px}
+.gym-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.gym-ej-name{font-size:14px;font-weight:600;color:var(--text)}
+.gym-del{background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:0}
+.gym-chips{display:flex;gap:6px;flex-wrap:wrap}
+.gym-chip{background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:4px 10px;font-size:11px;color:var(--text2)}
+.gym-chip.p{background:var(--teal-light);border-color:var(--teal-border);color:var(--teal);font-weight:600}
+.gym-hist-item{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px}
+.gym-hist-date{font-size:11px;color:var(--text3);margin-bottom:5px}
+.gym-hist-row{display:flex;justify-content:space-between;align-items:center}
+.gym-hist-name{font-size:13px;font-weight:500;color:var(--text)}
+.gym-hist-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.gym-prog{font-size:11px;font-weight:600;color:var(--teal)}
+.gym-prog.dn{color:var(--red)}
 </style>
 </head>
 <body>
@@ -123,6 +137,7 @@ body{overflow-x:hidden;padding-bottom:env(safe-area-inset-bottom)}
 
   <div class="tabs">
     <button class="tab active" onclick="showTab('hoy',this)">Hoy</button>
+    <button class="tab" onclick="showTab('gymlog',this)">💪 Gym Log</button>
     <button class="tab" onclick="showTab('historial',this)">Historial</button>
   </div>
 
@@ -202,6 +217,34 @@ body{overflow-x:hidden;padding-bottom:env(safe-area-inset-bottom)}
     <button class="btn-copy visible" id="copy-btn" onclick="copiarParaClaude()" style="display:none">📋 Copiar resumen para enviar a Claude</button>
     <button class="btn-secondary" onclick="resetDia()">Limpiar día actual</button>
 
+  </div>
+
+  <div class="tab-content" id="tab-gymlog">
+    <div class="section">
+      <div class="section-label">Sesion de hoy</div>
+      <div class="session-grid" id="gym-sess-grid">
+        <button class="session-btn" data-val="Lower">Peso Muerto/Squat</button>
+        <button class="session-btn" data-val="Upper">Press/Row</button>
+        <button class="session-btn" data-val="Full Body">Full Body</button>
+        <button class="session-btn" data-val="Hybrid">Hybrid</button>
+      </div>
+    </div>
+    <div id="gym-today-wrap"></div>
+    <div class="section">
+      <div class="section-label">Agregar ejercicio</div>
+      <div class="fields">
+        <div class="field-row"><span class="field-label">Ejercicio</span><input id="gej" placeholder="ej. Bench Press" class="time-input"></div>
+        <div class="field-row"><span class="field-label">Series x Reps</span><input id="gser" placeholder="ej. 5x4" class="time-input"></div>
+        <div class="field-row"><span class="field-label">Peso (lb)</span><input id="gpeso" type="number" placeholder="ej. 45" class="time-input"></div>
+        <div class="field-row"><span class="field-label">RPE</span><input id="grpe" placeholder="ej. 8" class="time-input"></div>
+        <div class="field-row"><span class="field-label">Notas</span><input id="gnot" placeholder="modificacion, sensacion..." class="time-input"></div>
+      </div>
+      <button class="btn-primary" onclick="gymAgregar()" style="margin-bottom:10px">+ Agregar</button>
+    </div>
+    <div class="section">
+      <div class="section-label">Progresion de pesos</div>
+      <div id="gym-hist"></div>
+    </div>
   </div>
 
   <div class="tab-content" id="tab-historial">
@@ -533,6 +576,95 @@ function init(){
 }
 
 init();
+
+// === GYM LOG ===
+let gSess='';
+function gymK(){ return 'pgy_'+new Date().toISOString().slice(0,10); }
+function gymAllK(){ return 'pgy_all'; }
+function gymGetToday(){ try{return JSON.parse(localStorage.getItem(gymK())||'[]');}catch(e){return[];} }
+function gymGetAll(){ try{return JSON.parse(localStorage.getItem(gymAllK())||'[]');}catch(e){return[];} }
+
+function gymSave(entry){
+  try{
+    const td=gymGetToday(); td.push(entry); localStorage.setItem(gymK(),JSON.stringify(td));
+    const all=gymGetAll(); all.push(entry); localStorage.setItem(gymAllK(),JSON.stringify(all));
+  }catch(e){}
+}
+
+function gymRenderSess(){
+  document.querySelectorAll('#gym-sess-grid .session-btn').forEach(btn=>{
+    btn.classList.toggle('active',btn.dataset.val===gSess);
+    btn.onclick=()=>{ gSess=btn.dataset.val;
+      document.querySelectorAll('#gym-sess-grid .session-btn').forEach(b=>b.classList.toggle('active',b===btn));
+      gymRenderToday(); gymRenderHist(); };
+  });
+}
+
+function gymRenderToday(){
+  const wrap=document.getElementById('gym-today-wrap');
+  const data=gymGetToday().filter(e=>e.sess===gSess);
+  if(!data.length){wrap.innerHTML='';return;}
+  let h='<div class="section"><div class="section-label">Hoy</div>';
+  data.forEach((e,i)=>{
+    h+=`<div class="gym-card"><div class="gym-card-header"><div class="gym-ej-name">${e.ej}</div><button class="gym-del" onclick="gymDel(${i})">x</button></div><div class="gym-chips"><span class="gym-chip p">x ${e.peso} lb</span>${e.ser?`<span class="gym-chip">${e.ser}</span>`:''} ${e.rpe?`<span class="gym-chip">RPE ${e.rpe}</span>`:''} ${e.not?`<span class="gym-chip">${e.not}</span>`:''}</div></div>`;
+  });
+  h+='</div>';
+  wrap.innerHTML=h;
+}
+
+function gymDel(i){
+  try{
+    const td=gymGetToday(); const sess=td.filter(e=>e.sess===gSess);
+    const del=sess[i];
+    const newTd=td.filter(e=>e.ts!==del.ts); localStorage.setItem(gymK(),JSON.stringify(newTd));
+    const all=gymGetAll(); const newAll=all.filter(e=>e.ts!==del.ts); localStorage.setItem(gymAllK(),JSON.stringify(newAll));
+    gymRenderToday(); gymRenderHist();
+  }catch(e){}
+}
+
+function gymAgregar(){
+  const ej=document.getElementById('gej').value.trim();
+  const peso=document.getElementById('gpeso').value.trim();
+  if(!ej||!peso){showToast('Escribe ejercicio y peso');return;}
+  if(!gSess){showToast('Selecciona la sesion primero');return;}
+  const entry={ej,sess:gSess,ser:document.getElementById('gser').value.trim(),
+    peso:parseFloat(peso),rpe:document.getElementById('grpe').value.trim(),
+    not:document.getElementById('gnot').value.trim(),
+    fecha:new Date().toISOString().slice(0,10),ts:Date.now()};
+  gymSave(entry);
+  ['gej','gser','gpeso','grpe','gnot'].forEach(id=>document.getElementById(id).value='');
+  gymRenderToday(); gymRenderHist();
+  showToast('x '+ej+' registrado');
+}
+
+function gymRenderHist(){
+  const c=document.getElementById('gym-hist');
+  const all=gymGetAll();
+  if(!all.length){c.innerHTML='<div class="empty-state">Registra tu primer ejercicio para ver la progresion</div>';return;}
+  const byEj={};
+  all.forEach(e=>{ if(gSess && e.sess!==gSess) return; if(!byEj[e.ej])byEj[e.ej]=[]; byEj[e.ej].push(e); });
+  const keys=Object.keys(byEj);
+  if(!keys.length){c.innerHTML='<div class="empty-state">Sin registros para esta sesion</div>';return;}
+  let h='';
+  keys.forEach(ej=>{
+    const entries=byEj[ej].sort((a,b)=>a.ts-b.ts);
+    const last=entries[entries.length-1];
+    const prev=entries.length>1?entries[entries.length-2]:null;
+    let prog='';
+    if(prev){
+      const d=last.peso-prev.peso;
+      if(d>0) prog=`<span class="gym-prog">x +${d} lb</span>`;
+      else if(d<0) prog=`<span class="gym-prog dn">x ${d} lb</span>`;
+      else prog=`<span class="gym-prog" style="color:var(--text3)">= Igual</span>`;
+    }
+    h+=`<div class="gym-hist-item"><div class="gym-hist-date">${last.sess} x ${last.fecha}</div><div class="gym-hist-row"><div><div class="gym-hist-name">${ej}</div><div class="gym-hist-sub">${last.peso} lb ${last.ser?'x '+last.ser:''} ${last.rpe?'RPE '+last.rpe:''}</div></div>${prog}</div></div>`;
+  });
+  c.innerHTML=h;
+}
+
+function initGym(){ gymRenderSess(); gymRenderHist(); }
+initGym();
+
 </script>
 </body>
 </html>
